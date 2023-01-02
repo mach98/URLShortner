@@ -38,6 +38,54 @@ public sealed class ShortUrlRepository
 
     public async Task Delete(string path)
     {
+        if (await Exists(path) == false)
+            throw new Exception($"Shortened URL with Path '{shortUrl.Path}' does not exist.");
 
+        var urlWasDeleted = await redisDatabase.KeyDeleteAsync(path);
+
+        if (!urlWasDeleted)
+            throw new Exception("Failed to delete shortened URL path");
     }
+
+    public async Task<ShortUrl?> Get(string path)
+    {
+        if (await Exists(path) == false)
+            throw new Exception($"Shortened URL with Path '{shortUrl.Path}' does not exist");
+
+        var redisValue = await redisDatabase.GetStringAsync(path);
+
+        if (redisValue.IsNullOrEmpty)
+            return null;
+
+        return new ShortUrl(redisValue.ToString(), path);
+    }
+
+    public async Task<List<ShortUrl>> GetAll()
+    {
+        var redisServers = redisConnection.GetServers();
+        var keys = new List<string>();
+        foreach (var redisServer in redisServers)
+        {
+            await foreach (var redisKey in redisServer.KeysAsync())
+            {
+                var key = redisKey.ToString();
+                if (keys.Contains(key)) continue;
+                keys.Add(key);
+            }
+        }
+
+        var redisDb = redisConnection.GetDatabase();
+
+        var shortUrls = new List<ShortUrl>();
+        foreach (var key in keys)
+        {
+            var redisValue = redisDb.StringGet(key);
+            shortUrls.Add(new ShortUrl(redisValue.ToString(), key));
+        }
+
+        return shortUrls;
+    }
+
+    public async Task<bool> Exists(string? path)
+        => await redisDatabase.KeyExistsAsync(path);
 }
